@@ -6,7 +6,12 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "prebuild:android": "expo prebuild --platform android --clean --no-install",
+    "build:android:debug": "cd android && ./gradlew assembleDebug --no-daemon",
+    "build:android:release": "cd android && ./gradlew assembleRelease --no-daemon",
+    "build:eas:preview": "eas build --platform android --profile preview --non-interactive",
+    "build:eas:production": "eas build --platform android --profile production --non-interactive"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

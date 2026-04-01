@@ -1,0 +1,144 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - 'copilot/**'
+    paths:
+      - 'VsCodeAndroid/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'VsCodeAndroid/**'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile (preview = APK, production = AAB)'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1 – Local build using Gradle (no Expo account required)
+  # Produces a debug APK that can be side-loaded on any Android device.
+  # ──────────────────────────────────────────────────────────────────────────
+  build-local:
+    name: Build Android APK (local Gradle)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: VsCodeAndroid/package-lock.json
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install JS dependencies
+        working-directory: VsCodeAndroid
+        run: npm ci
+
+      - name: Generate native Android project (expo prebuild)
+        working-directory: VsCodeAndroid
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('VsCodeAndroid/android/**/*.gradle*', 'VsCodeAndroid/android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        working-directory: VsCodeAndroid/android
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        working-directory: VsCodeAndroid/android
+        run: ./gradlew assembleDebug --no-daemon
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2'
+
+      - name: Find APK path
+        id: find-apk
+        run: |
+          APK=$(find VsCodeAndroid/android -name "app-debug.apk" -type f | head -1)
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK found at: $APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vs-code-android-debug-apk
+          path: ${{ steps.find-apk.outputs.apk }}
+          if-no-files-found: error
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2 – EAS cloud build (requires EXPO_TOKEN repository secret)
+  # Produces a signed release APK via Expo Application Services.
+  # To enable: add EXPO_TOKEN to Settings → Secrets → Actions.
+  # ──────────────────────────────────────────────────────────────────────────
+  build-eas:
+    name: Build Android APK (EAS cloud)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Only run this job when the EXPO_TOKEN secret is present
+    if: ${{ vars.EXPO_BUILD_ENABLED == 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: VsCodeAndroid/package-lock.json
+
+      - name: Install JS dependencies
+        working-directory: VsCodeAndroid
+        run: npm ci
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit EAS build (non-blocking)
+        working-directory: VsCodeAndroid
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ github.event.inputs.profile || 'preview' }} \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+

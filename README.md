@@ -2,16 +2,18 @@
 
 A VS Code-like code editor app for Android built with React Native (Expo). It faithfully recreates the VS Code experience on mobile devices with the same dark theme, UI layout, and core functionality.
 
+[![Build Android APK](https://github.com/ogtanmay/sturdy-octo-spoon/actions/workflows/build-android.yml/badge.svg)](https://github.com/ogtanmay/sturdy-octo-spoon/actions/workflows/build-android.yml)
+
 ## Screenshots
 
 ### Welcome Screen
-![Welcome Screen](screenshots/vscode-android-welcome.png)
+![Welcome Screen](VsCodeAndroid/screenshots/vscode-android-welcome.png)
 
 ### Code Editor with Syntax Highlighting
-![Code Editor](screenshots/vscode-android-editor.png)
+![Code Editor](VsCodeAndroid/screenshots/vscode-android-editor.png)
 
 ### Full Editor with Terminal
-![Editor with Terminal](screenshots/vscode-android-terminal.png)
+![Editor with Terminal](VsCodeAndroid/screenshots/vscode-android-terminal.png)
 
 ## Features
 
@@ -27,33 +29,58 @@ A VS Code-like code editor app for Android built with React Native (Expo). It fa
 - **Status Bar** — VS Code-style status bar with git branch, cursor position, encoding
 - **Welcome Screen** — VS Code-style welcome screen with recent files
 
-## Getting Started
+## Install the APK on Android
+
+The easiest way to get the app on your phone is to download the APK built by GitHub Actions:
+
+1. Go to the **[Actions tab](https://github.com/ogtanmay/sturdy-octo-spoon/actions/workflows/build-android.yml)**
+2. Click the latest successful **"Build Android APK"** run
+3. Download the `vs-code-android-debug-apk` artifact
+4. Extract the `.apk` file and transfer it to your Android device
+5. On your device, open the APK file — you may need to enable **"Install from unknown sources"** in Settings → Security
+
+## Build Locally
 
 ### Prerequisites
 
 - Node.js >= 18
-- npm or yarn
-- [Expo CLI](https://docs.expo.dev/get-started/installation/)
-- [Expo Go](https://expo.dev/go) app on your Android phone
+- Java 17 (for Android builds)
+- Android SDK (for native builds)
+- [Expo Go](https://expo.dev/go) app (for development/preview)
 
-### Installation
+### Development (Expo Go)
 
 ```bash
 cd VsCodeAndroid
-
-# Install dependencies
 npm install
-
-# Start the Expo development server
-npm start
+npm start         # Scan the QR code with Expo Go
 ```
 
-Then scan the QR code with the **Expo Go** app on your Android phone.
-
-### Running on Android Emulator
+### Build Debug APK (no signing required — can be sideloaded)
 
 ```bash
-npm run android
+cd VsCodeAndroid
+npm install
+
+# Step 1: Generate native Android project
+npm run prebuild:android
+
+# Step 2: Build the APK
+npm run build:android:debug
+# APK will be at: android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Build via EAS (Expo Application Services) — signed release APK
+
+> Requires a free [Expo account](https://expo.dev/signup) and `EXPO_TOKEN`.
+
+```bash
+cd VsCodeAndroid
+npm install
+npm install -g eas-cli
+eas login
+npm run build:eas:preview    # Produces a signed APK
+npm run build:eas:production # Produces a signed AAB for Play Store
 ```
 
 ### Running on Web (for preview)
@@ -62,12 +89,24 @@ npm run android
 npm run web
 ```
 
+## GitHub Actions Workflow
+
+The workflow at `.github/workflows/build-android.yml` automatically builds the APK on every push that changes files in `VsCodeAndroid/`. It has two jobs:
+
+| Job | When it runs | Output |
+|-----|-------------|--------|
+| **build-local** | Every push / PR | Debug APK uploaded as artifact (`vs-code-android-debug-apk`) |
+| **build-eas** | Only when `EXPO_BUILD_ENABLED` variable is `true` | Signed APK built on Expo's cloud |
+
+To trigger a manual build with a specific profile, go to **Actions → Build Android APK → Run workflow**.
+
 ## Project Structure
 
 ```
 VsCodeAndroid/
 ├── App.js                     # Main app entry point
-├── app.json                   # Expo configuration
+├── app.json                   # Expo configuration (package name, versionCode)
+├── eas.json                   # EAS Build profiles (preview APK, production AAB)
 ├── src/
 │   ├── components/
 │   │   ├── ActivityBar.js     # Left sidebar icons
@@ -86,7 +125,9 @@ VsCodeAndroid/
 
 ## Technology Stack
 
-- **React Native** with [Expo](https://expo.dev/)
+- **React Native** with [Expo](https://expo.dev/) ~54
+- **EAS Build** for producing installable Android APKs
 - **@expo/vector-icons** for Ionicons
 - **react-native-web** for web preview
 - Custom syntax tokenizer for code highlighting
+
