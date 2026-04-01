@@ -252,6 +252,12 @@ const CodeEditor = ({ file, onContentChange, isDirty }) => {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
+  // Pre-compute line count for the edit-mode gutter (memoized to avoid splitting on every render)
+  const editLineCount = React.useMemo(
+    () => editText.split('\n').length,
+    [editText]
+  );
+
   // Sync edit buffer when a different file is opened
   React.useEffect(() => {
     if (file) {
@@ -273,6 +279,7 @@ const CodeEditor = ({ file, onContentChange, isDirty }) => {
   const handleStartEdit = () => {
     setEditText(file.content || '');
     setIsEditing(true);
+    // Delay focus until after the TextInput has been mounted in the next render
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
@@ -317,7 +324,7 @@ const CodeEditor = ({ file, onContentChange, isDirty }) => {
             <View style={styles.editRow}>
               {/* Line numbers alongside the TextInput */}
               <View style={styles.lineNumberCol}>
-                {editText.split('\n').map((_, idx) => (
+                {Array.from({ length: editLineCount }, (_, idx) => (
                   <Text key={idx} style={styles.lineNumber}>
                     {idx + 1}
                   </Text>

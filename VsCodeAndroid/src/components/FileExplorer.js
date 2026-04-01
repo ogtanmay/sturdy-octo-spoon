@@ -164,6 +164,13 @@ const NewFileDialog = ({ visible, onClose, onCreate }) => {
   const handleCreate = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
+
+    // Reject names with path-separator or reserved characters
+    if (/[/\\:*?"<>|]/.test(trimmed)) {
+      Alert.alert('Invalid Name', 'File name must not contain: / \\ : * ? " < > |');
+      return;
+    }
+
     onCreate(trimmed);
     setName('');
     onClose();
@@ -224,7 +231,10 @@ const FileExplorer = ({ onFileOpen, openFiles, activeFileId }) => {
       const files = await listAppFiles();
       setMyFiles(files);
     } catch (e) {
-      // directory may not exist yet; ignore
+      // If the directory doesn't exist yet it will be created on first use; ignore that case
+      if (!e.message?.includes('does not exist') && !e.message?.includes('No such file')) {
+        console.warn('refreshMyFiles:', e.message);
+      }
     }
   }, []);
 
