@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,18 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
+  Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fontSize, fontFamily } from '../theme/vsCodeTheme';
 import { sampleFiles } from '../data/sampleFiles';
+import {
+  pickFile,
+  createNewFile,
+  listAppFiles,
+  readFile,
+} from '../utils/fileSystem';
 
 const FILE_ICON_COLORS = {
   javascript: '#f7df1e',
@@ -149,8 +157,114 @@ const FileTreeItem = ({ item, depth = 0, onFileOpen, openFiles, activeFileId }) 
   );
 };
 
+// ── New File Dialog ──────────────────────────────────────────────────────────
+const NewFileDialog = ({ visible, onClose, onCreate }) => {
+  const [name, setName] = useState('');
+
+  const handleCreate = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onCreate(trimmed);
+    setName('');
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <TouchableOpacity activeOpacity={1} style={styles.dialog}>
+          <Text style={styles.dialogTitle}>New File</Text>
+          <TextInput
+            style={styles.dialogInput}
+            value={name}
+            onChangeText={setName}
+            placeholder="filename.js"
+            placeholderTextColor={colors.dimForeground}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            onSubmitEditing={handleCreate}
+            returnKeyType="done"
+          />
+          <View style={styles.dialogActions}>
+            <TouchableOpacity style={styles.dialogBtn} onPress={onClose}>
+              <Text style={styles.dialogBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dialogBtn, styles.dialogBtnPrimary]}
+              onPress={handleCreate}
+            >
+              <Text style={[styles.dialogBtnText, styles.dialogBtnPrimaryText]}>
+                Create
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+};
+
+// ── FileExplorer ─────────────────────────────────────────────────────────────
 const FileExplorer = ({ onFileOpen, openFiles, activeFileId }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [myFiles, setMyFiles] = useState([]);
+  const [newFileDialogVisible, setNewFileDialogVisible] = useState(false);
+
+  const refreshMyFiles = useCallback(async () => {
+    try {
+      const files = await listAppFiles();
+      setMyFiles(files);
+    } catch (e) {
+      // directory may not exist yet; ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMyFiles();
+  }, [refreshMyFiles]);
+
+  const handleOpenFilePicker = async () => {
+    try {
+      const file = await pickFile();
+      if (file) {
+        onFileOpen(file);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not open file: ' + e.message);
+    }
+  };
+
+  const handleNewFile = async (name) => {
+    try {
+      const file = await createNewFile(name);
+      await refreshMyFiles();
+      onFileOpen(file);
+    } catch (e) {
+      Alert.alert('Error', 'Could not create file: ' + e.message);
+    }
+  };
+
+  const handleMyFileOpen = async (item) => {
+    try {
+      if (item.content !== null) {
+        onFileOpen(item);
+      } else {
+        const content = await readFile(item.uri);
+        onFileOpen({ ...item, content });
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not read file: ' + e.message);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -158,74 +272,107 @@ const FileExplorer = ({ onFileOpen, openFiles, activeFileId }) => {
       <View style={styles.header}>
         <Text style={styles.headerText}>EXPLORER</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerBtn}>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={() => setNewFileDialogVisible(true)}
+          >
             <Ionicons name="add" size={16} color={colors.dimForeground} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={handleOpenFilePicker}
+          >
             <Ionicons name="folder-open-outline" size={16} color={colors.dimForeground} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
+          <TouchableOpacity style={styles.headerBtn} onPress={refreshMyFiles}>
             <Ionicons name="refresh-outline" size={16} color={colors.dimForeground} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
-            <Ionicons name="ellipsis-horizontal" size={16} color={colors.dimForeground} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Open Editors section */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="chevron-down" size={12} color={colors.dimForeground} />
-        <Text style={styles.sectionTitle}>OPEN EDITORS</Text>
-      </View>
-
-      {openFiles.length > 0 && (
-        <View>
-          {openFiles.map((file) => (
-            <TouchableOpacity
-              key={file.id}
-              style={[
-                styles.openEditorItem,
-                file.id === activeFileId && styles.activeTreeItem,
-              ]}
-              onPress={() => onFileOpen(file)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={getFileIcon(file.name, file.type).icon}
-                size={14}
-                color={getFileIcon(file.name, file.type).color}
-                style={styles.fileIcon}
-              />
-              <Text
-                style={[
-                  styles.openEditorName,
-                  file.id === activeFileId && styles.activeFileName,
-                ]}
-                numberOfLines={1}
-              >
-                {file.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Project section */}
-      <View style={styles.sectionHeader}>
-        <Ionicons name="chevron-down" size={12} color={colors.dimForeground} />
-        <Text style={styles.sectionTitle}>MY-PROJECT</Text>
-        <View style={styles.sectionActions}>
-          <TouchableOpacity style={styles.headerBtn}>
-            <Ionicons name="document-outline" size={14} color={colors.dimForeground} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
-            <Ionicons name="folder-outline" size={14} color={colors.dimForeground} />
           </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView style={styles.fileTree} showsVerticalScrollIndicator={false}>
+
+        {/* Open Editors section */}
+        {openFiles.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="chevron-down" size={12} color={colors.dimForeground} />
+              <Text style={styles.sectionTitle}>OPEN EDITORS</Text>
+            </View>
+            {openFiles.map((file) => (
+              <TouchableOpacity
+                key={file.id}
+                style={[
+                  styles.openEditorItem,
+                  file.id === activeFileId && styles.activeTreeItem,
+                ]}
+                onPress={() => onFileOpen(file)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={getFileIcon(file.name, file.type).icon}
+                  size={14}
+                  color={getFileIcon(file.name, file.type).color}
+                  style={styles.fileIcon}
+                />
+                <Text
+                  style={[
+                    styles.openEditorName,
+                    file.id === activeFileId && styles.activeFileName,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {file.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+
+        {/* My Files (created / picked on this device) */}
+        {myFiles.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="chevron-down" size={12} color={colors.dimForeground} />
+              <Text style={styles.sectionTitle}>MY FILES</Text>
+            </View>
+            {myFiles.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[
+                  styles.treeItem,
+                  { paddingLeft: 12 },
+                  activeFileId === item.id && styles.activeTreeItem,
+                ]}
+                onPress={() => handleMyFileOpen(item)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.chevronPlaceholder} />
+                <Ionicons
+                  name={getFileIcon(item.name, 'file').icon}
+                  size={16}
+                  color={getFileIcon(item.name, 'file').color}
+                  style={styles.fileIcon}
+                />
+                <Text
+                  style={[
+                    styles.fileName,
+                    activeFileId === item.id && styles.activeFileName,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+
+        {/* Sample / Demo project */}
+        <View style={styles.sectionHeader}>
+          <Ionicons name="chevron-down" size={12} color={colors.dimForeground} />
+          <Text style={styles.sectionTitle}>SAMPLE PROJECT</Text>
+        </View>
         {sampleFiles.children?.map((item) => (
           <FileTreeItem
             key={item.id}
@@ -236,7 +383,14 @@ const FileExplorer = ({ onFileOpen, openFiles, activeFileId }) => {
             activeFileId={activeFileId}
           />
         ))}
+
       </ScrollView>
+
+      <NewFileDialog
+        visible={newFileDialogVisible}
+        onClose={() => setNewFileDialogVisible(false)}
+        onCreate={handleNewFile}
+      />
     </View>
   );
 };
@@ -282,9 +436,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     flex: 1,
   },
-  sectionActions: {
-    flexDirection: 'row',
-  },
   fileTree: {
     flex: 1,
   },
@@ -329,6 +480,63 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     fontSize: 12,
     flex: 1,
+  },
+
+  // New File dialog
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialog: {
+    backgroundColor: colors.sideBar,
+    borderRadius: 6,
+    padding: 20,
+    width: 280,
+    borderWidth: 1,
+    borderColor: colors.editorGroupBorder,
+  },
+  dialogTitle: {
+    color: colors.foreground,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  dialogInput: {
+    backgroundColor: colors.editorBackground,
+    color: colors.foreground,
+    fontSize: 14,
+    fontFamily: fontFamily.mono,
+    borderWidth: 1,
+    borderColor: colors.link,
+    borderRadius: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 16,
+  },
+  dialogActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  dialogBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: colors.editorGroupBorder,
+  },
+  dialogBtnPrimary: {
+    backgroundColor: colors.link,
+    borderColor: colors.link,
+  },
+  dialogBtnText: {
+    color: colors.foreground,
+    fontSize: 13,
+  },
+  dialogBtnPrimaryText: {
+    color: '#ffffff',
   },
 });
 

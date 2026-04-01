@@ -23,7 +23,10 @@
       "edgeToEdgeEnabled": true,
       "package": "com.vscode.android",
       "versionCode": 1,
-      "permissions": []
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

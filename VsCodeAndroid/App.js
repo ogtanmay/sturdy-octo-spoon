@@ -7,6 +7,7 @@ import {
   Platform,
   TouchableOpacity,
   Text,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ActivityBar from './src/components/ActivityBar';
@@ -18,6 +19,7 @@ import AppStatusBar from './src/components/AppStatusBar';
 import Terminal from './src/components/Terminal';
 import { colors } from './src/theme/vsCodeTheme';
 import { sampleFiles } from './src/data/sampleFiles';
+import { saveFile } from './src/utils/fileSystem';
 
 export default function App() {
   const [activePanel, setActivePanel] = useState('explorer');
@@ -27,27 +29,56 @@ export default function App() {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
 
   const activeFile = openFiles.find((f) => f.id === activeFileId) || null;
+  const isDirty = activeFile?.isDirty || false;
 
   const handleFileOpen = useCallback((file) => {
-    if (!openFiles.find((f) => f.id === file.id)) {
-      setOpenFiles((prev) => [...prev, file]);
-    }
+    setOpenFiles((prev) => {
+      const existing = prev.find((f) => f.id === file.id);
+      if (existing) return prev;
+      return [...prev, { ...file, isDirty: false }];
+    });
     setActiveFileId(file.id);
-  }, [openFiles]);
+  }, []);
 
   const handleTabClose = useCallback((fileId) => {
-    setOpenFiles((prev) => {
-      const newFiles = prev.filter((f) => f.id !== fileId);
-      if (activeFileId === fileId) {
-        const closedIndex = prev.findIndex((f) => f.id === fileId);
-        const newActive = newFiles[Math.min(closedIndex, newFiles.length - 1)];
-        setActiveFileId(newActive?.id || null);
-      }
-      return newFiles;
-    });
-  }, [activeFileId]);
+    const file = openFiles.find((f) => f.id === fileId);
+    const doClose = () => {
+      setOpenFiles((prev) => {
+        const newFiles = prev.filter((f) => f.id !== fileId);
+        if (activeFileId === fileId) {
+          const closedIndex = prev.findIndex((f) => f.id === fileId);
+          const newActive = newFiles[Math.min(closedIndex, newFiles.length - 1)];
+          setActiveFileId(newActive?.id || null);
+        }
+        return newFiles;
+      });
+    };
+
+    if (file?.isDirty) {
+      Alert.alert(
+        'Unsaved Changes',
+        `Save changes to "${file.name}" before closing?`,
+        [
+          { text: 'Discard', style: 'destructive', onPress: doClose },
+          {
+            text: 'Save',
+            onPress: async () => {
+              if (file.isRealFile && file.uri) {
+                await saveFile(file.uri, file.content || '');
+              }
+              doClose();
+            },
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } else {
+      doClose();
+    }
+  }, [activeFileId, openFiles]);
 
   const handleTabSelect = useCallback((file) => {
     setActiveFileId(file.id);
@@ -55,12 +86,42 @@ export default function App() {
 
   const handlePanelChange = useCallback((panelId) => {
     setActivePanel(panelId);
-    if (panelId) {
-      setIsSidebarVisible(true);
-    } else {
-      setIsSidebarVisible(false);
-    }
+    setIsSidebarVisible(!!panelId);
   }, []);
+
+  // Called by CodeEditor whenever the user types
+  const handleContentChange = useCallback((newContent) => {
+    setOpenFiles((prev) =>
+      prev.map((f) =>
+        f.id === activeFileId
+          ? { ...f, content: newContent, isDirty: true }
+          : f
+      )
+    );
+  }, [activeFileId]);
+
+  // Save the active file
+  const handleSave = useCallback(async () => {
+    if (!activeFile) return;
+    if (!activeFile.isRealFile || !activeFile.uri) {
+      Alert.alert(
+        'Cannot Save',
+        'Sample files cannot be saved. Create a new file or open one from your device to save changes.'
+      );
+      return;
+    }
+    try {
+      setIsSaving(true);
+      await saveFile(activeFile.uri, activeFile.content || '');
+      setOpenFiles((prev) =>
+        prev.map((f) => (f.id === activeFileId ? { ...f, isDirty: false } : f))
+      );
+    } catch (e) {
+      Alert.alert('Save Failed', e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [activeFile, activeFileId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -76,8 +137,23 @@ export default function App() {
         </TouchableOpacity>
         <Text style={styles.titleBarText} numberOfLines={1}>
           {activeFile ? activeFile.name : 'VS Code Android'}
+          {isDirty ? ' ●' : ''}
         </Text>
         <View style={styles.titleBarActions}>
+          {/* Save button */}
+          {activeFile && (
+            <TouchableOpacity
+              style={styles.titleBarBtn}
+              onPress={handleSave}
+              disabled={isSaving || !isDirty}
+            >
+              <Ionicons
+                name="save-outline"
+                size={18}
+                color={isDirty ? colors.link : colors.dimForeground}
+              />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.titleBarBtn}
             onPress={() => setIsTerminalVisible(!isTerminalVisible)}
@@ -155,6 +231,8 @@ export default function App() {
           />
           <CodeEditor
             file={activeFile}
+            onContentChange={handleContentChange}
+            isDirty={isDirty}
             onCursorChange={(line, col) => {
               setCursorLine(line);
               setCursorCol(col);
